@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Minus, Plus, ShoppingCart } from 'lucide-react';
+import { BASE_URL } from '../api'; // Pastikan path-nya benar mengarah ke file api.ts
 
 interface Product {
   id: string;
@@ -9,12 +10,36 @@ interface Product {
 }
 
 interface CatalogPageProps {
-  products: Product[];
   onNavigate: (page: string) => void;
 }
 
-export const CatalogPage: React.FC<CatalogPageProps> = ({ products, onNavigate }) => {
+export const CatalogPage: React.FC<CatalogPageProps> = ({ onNavigate }) => {
+  // Ganti sumber data dari props ke local state
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  // Fungsi Fetch untuk ambil data langsung dari backend temen lu
+  useEffect(() => {
+    fetch(`${BASE_URL}/products`)
+      .then((res) => res.json())
+      .then((data: any[]) => {
+        // Mapping nama variabel dari database temen lu ke format property React lu
+        const formattedProducts = data.map((item) => ({
+          id: String(item.id),
+          name: item.nama, // database: nama
+          price: Number(item.harga), // database: harga
+          image: item.gambar || 'https://via.placeholder.com/150' // Jika gambar null, kasih placeholder
+        }));
+        
+        setDbProducts(formattedProducts);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Waduh, gagal narik data dari backend temen lu:", err);
+        setLoading(false);
+      });
+  }, []);
 
   const handleQtyChange = (id: string, type: 'inc' | 'dec') => {
     setQuantities(prev => {
@@ -24,9 +49,17 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({ products, onNavigate }
     });
   };
 
-  // Hitung total item & harga buat bottom bar
+  // Hitung total item & harga buat bottom bar berdasarkan data dari DB
   const totalItems = Object.values(quantities).reduce((a, b) => a + b, 0);
-  const totalPrice = products.reduce((sum, p) => sum + (quantities[p.id] || 0) * p.price, 0);
+  const totalPrice = dbProducts.reduce((sum, p) => sum + (quantities[p.id] || 0) * p.price, 0);
+
+  if (loading) {
+    return (
+      <div className="pt-24 flex items-center justify-center min-h-screen">
+        <p className="text-lg font-semibold text-gray-500 animate-pulse">Memuat katalog produk dari server...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="pt-24 bg-white min-h-screen pb-32">
@@ -38,7 +71,7 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({ products, onNavigate }
 
         {/* Grid Produk */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-y-10 gap-x-6">
-          {products.map((product) => {
+          {dbProducts.map((product) => {
             const qty = quantities[product.id] || 0;
             const isSelected = qty > 0;
             
@@ -71,7 +104,7 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({ products, onNavigate }
         </div>
       </div>
 
-      {/* Sticky Bottom Checkout Bar (Muncul kalau ada item > 0) */}
+      {/* Sticky Bottom Checkout Bar */}
       {totalItems > 0 && (
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 shadow-[0_-8px_30px_rgb(0,0,0,0.06)] px-12 py-5 flex justify-between items-center z-50 animate-slide-up">
           <div className="space-y-1">

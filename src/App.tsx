@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Tambah useEffect di sini
+import { BASE_URL } from './api'; // Tambahkan ini buat manggil IP temen lu
 import {
   ShoppingBag, Star, User, Search, ArrowLeft, X,
   Edit2, Package, Upload, Camera, Plus, Minus, Trash2, LogOut,
   ShieldCheck, ShoppingCart, MessageSquare, Download, Tag,
   Users, ClipboardList, Calendar, Check, AlertTriangle, Truck,
   ChevronsRight, UserPlus
-} from 'lucide-react';
+} from 'lucide-react'; //
 
 // ================= TYPESCRIPT INTERFACES =================
 interface Product {
@@ -86,6 +87,28 @@ const AVAILABLE_PHONE_TYPES: string[] = [
 
 export default function App() {
   // ================= STATES =================
+  // KODE PAKSA API - TARUH DI SINI BOS
+  const [apiProducts, setApiProducts] = useState<any[]>([]);
+useEffect(() => {
+    // KITA TEMBAK LANGSUNG PAKE LINK YANG LU KETIK DI BROWSER DAN BERHASIL KELUAR DATA JSON-NYA
+    fetch("http://192.168.18.82:8000/api/products") 
+      .then((res) => res.json())
+      .then((data: any[]) => {
+        console.log("Data dari backend temen:", data); // Buat ngecek di console nanti
+        
+        const formatted = data.map((item) => ({
+          id: String(item.id),
+          name: item.nama || item.name, 
+          price: Number(item.harga),
+          image: item.gambar || 'https://via.placeholder.com/150',
+          material: item.deskripsi || '',
+          description: item.deskripsi || ''
+        }));
+        setApiProducts(formatted);
+      })
+      .catch((err) => console.error("Gagal API:", err));
+  }, []);
+  
   const [currentView, setCurrentView] = useState<string>('homepage');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
@@ -119,7 +142,28 @@ export default function App() {
 
   // Admin Products State
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  
+  // Taruh ini tepat di bawah state products lu ya bos
+  useEffect(() => {
+    fetch(`${BASE_URL}/products`)
+      .then((res) => res.json())
+      .then((data: any[]) => {
+        // Mapping property database temen lu biar sesuai format template React lu
+        const formattedProducts = data.map((item) => ({
+          id: String(item.id),
+          name: item.nama,          // ngambil 'nama' dari backend
+          price: Number(item.harga), // ngambil 'harga' dari backend
+          image: item.gambar || 'https://via.placeholder.com/150', // cadangan kalau gambar null
+          material: item.deskripsi || '',
+          description: item.deskripsi || '' // ngambil 'deskripsi' dari backend
+        }));
+        
+        setProducts(formattedProducts); // TIMPA DATA DUMMY PAKE DATA ASLI!
+      })
+      .catch((err) => {
+        console.error("Waduh, gagal konek ke API temen lu:", err);
+      });
+  }, []);
+
   // HAPUS 'cust_edit' DARI STATE ADMIN MODAL KARENA SEKARANG ADMIN CUMA BISA DELETE CUSTOMER
   const [adminModal, setAdminModal] = useState<'none' | 'add' | 'edit' | 'delete' | 'banner' | 'cust_add' | 'cust_delete'>('none');
   const [activeItem, setActiveItem] = useState<Product | null>(null);
@@ -211,9 +255,11 @@ export default function App() {
   const [formCustStatus, setFormCustStatus] = useState<'Verified' | 'Unverified'>('Verified');
 
   // ================= COMPUTED VALUES =================
-  const filteredProducts = products.filter((product: Product) => 
-    product.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+ const filteredProducts = apiProducts.filter((product: any) => {
+    // Kita cek semua kemungkinan: mau namanya 'nama' atau 'name', ambil yang ada isinya!
+    const namaProduk = product.nama || product.name || '';
+    return namaProduk.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   const filteredOrdersAdmin = adminDateFilter 
     ? orderHistory.filter((order: OrderHistory) => order.date === adminDateFilter)
@@ -252,18 +298,55 @@ export default function App() {
   };
 
   const handleAddToCartFromDetail = () => {
-    if (!isLoggedIn) { alert("Akses Ditolak! Sign Up atau Login dulu."); setSelectedProduct(null); setCurrentView('login'); return; }
-    if (!selectedPhoneType) { setShowTypeError(true); return; }
+    // 1. Validasi bawaan kodingan lu (tetap dipertahankan biar gak bocor)
+    if (!isLoggedIn) { 
+      alert("Akses Ditolak! Sign Up atau Login dulu."); 
+      setSelectedProduct(null); 
+      setCurrentView('login'); 
+      return; 
+    }
+    if (!selectedPhoneType) { 
+      setShowTypeError(true); 
+      return; 
+    }
     if (!selectedProduct) return;
 
-    setCartItems(prev => {
-      const existing = prev.find((item: CartItem) => item.id === selectedProduct.id && item.phoneType === selectedPhoneType);
-      if (existing) {
-        return prev.map((item: CartItem) => (item.id === selectedProduct.id && item.phoneType === selectedPhoneType) ? { ...item, quantity: item.quantity + detailQuantity } : item);
+    // 2. JALUR BARU: Langsung tembak data keranjang ke Laravel temen lu (IP 18.82)
+    fetch("http://192.168.18.82:8000/api/cart/add", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        product_id: selectedProduct.id,
+        quantity: 1,
+        phone_type: selectedPhoneType // Bonus data tipe HP dikirim ke backend
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        console.log("Respon sukses Laravel:", data.message);
+
+        // 3. Jika backend sukses menyimpan, update state lokal biar angka di ikon keranjang lu nambah
+        setCartItems(prev => {
+          const existing = prev.find((item: any) => item.id === selectedProduct.id && item.phoneType === selectedPhoneType);
+          if (existing) {
+            return prev.map((item: any) => (item.id === selectedProduct.id && item.phoneType === selectedPhoneType) ? { ...item, quantity: item.quantity + 1 } : item);
+          }
+          return [...prev, { ...selectedProduct, quantity: 1, phoneType: selectedPhoneType }];
+        });
+
+        alert(`${selectedProduct.name} berhasil masuk ke keranjang backend!`);
+      } else {
+        alert("Gagal menambahkan: " + data.message);
       }
-      return [...prev, { ...selectedProduct, quantity: detailQuantity, phoneType: selectedPhoneType }];
+    })
+    .catch(err => {
+      console.error("Eror kirim data keranjang:", err);
+      alert("Gagal konek ke server keranjang!");
     });
-    alert(`Sukses! ${detailQuantity} pcs masuk ke keranjang.`); setSelectedProduct(null); 
   };
 
   const handleDirectCheckoutFromDetail = () => {
@@ -275,14 +358,49 @@ export default function App() {
     setSelectedProduct(null); setCurrentView('checkout'); 
   };
 
-  const adjustCartItemQuantity = (id: string, phoneType: string, type: 'inc' | 'dec') => {
-    setCartItems(prevItems => prevItems.map(item => {
-      if (item.id === id && item.phoneType === phoneType) {
-        const newQty = type === 'inc' ? item.quantity + 1 : item.quantity - 1;
-        return newQty > 0 ? { ...item, quantity: newQty } : null;
+ const adjustCartItemQuantity = (id: string, phoneType: string, type: 'inc' | 'dec') => {
+    // 1. Cari item berdasarkan variabel asli React lu (id dan phoneType)
+    const targetItem = cartItems.find(item => item.id === id && item.phoneType === phoneType);
+    
+    // 2. JALUR KHUSUS HAPUS: Jika quantity bernilai 1 dan tombol minus (-) atau tong sampah diklik
+    if (type === 'dec' && targetItem && targetItem.quantity === 1) {
+      if (confirm("Yakin nih casing ini mau dihapus dari database, Bos?")) {
+        
+        // Tembak API DELETE ke Laravel temen lu (Tetap kirim param phoneType)
+        fetch(`http://192.168.18.82:8000/api/cart/${id}?phone_type=${encodeURIComponent(phoneType)}`, {
+          method: "DELETE",
+        })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            console.log("Sukses hapus permanen dari MySQL temen lu!");
+            // Hilangkan dari layar pakai variabel asli lu
+            setCartItems((prevItems) => prevItems.filter((item) => !(item.id === id && item.phoneType === phoneType)));
+          } else {
+            alert("Server temen lu menolak: " + data.message);
+          }
+        })
+        .catch((err) => {
+          console.error("Gagal koneksi ke backend saat hapus:", err);
+          // Fallback biar tetep bisa hapus di layar kalau offline pas demo
+          setCartItems((prevItems) => prevItems.filter((item) => !(item.id === id && item.phoneType === phoneType)));
+        });
       }
-      return item;
-    }).filter((item): item is CartItem => item !== null));
+      return; // Stop di sini
+    }
+
+    // 3. JALUR UPDATE QUANTITY BIASA (100% BAWAAN ORIGINAL LU BIAR GAK EROR)
+    setCartItems((prevItems) =>
+      prevItems
+        .map((item) => {
+          if (item.id === id && item.phoneType === phoneType) {
+            const newQty = type === 'inc' ? item.quantity + 1 : item.quantity - 1;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter((item): item is CartItem => item !== null)
+    );
   };
 
   const handleApplyVoucher = () => {
@@ -402,6 +520,28 @@ export default function App() {
       return 'Cari data...';
   }
 };
+// FUNGSI BUAT NARIK DATA KERANJANG DARI BACKEND LARAVEL
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetch("http://192.168.18.82:8000/api/cart")
+        .then((res) => res.json())
+        .then((resJson) => {
+          if (resJson.success && resJson.data) {
+            console.log("Data keranjang backend mendarat:", resJson.data);
+            const formattedCart = resJson.data.map((item: any) => ({
+              id: String(item.product_id),
+              name: item.product_name || 'Casing Custom',
+              price: Number(item.price) || 0,
+              image: item.image || 'https://via.placeholder.com/150',
+              quantity: Number(item.quantity) || 1,
+              phoneType: item.phone_type || 'Umum'
+            }));
+            setCartItems(formattedCart); // Menerapkan data ke state keranjang asli lu
+          }
+        })
+        .catch((err) => console.error("Gagal muat keranjang backend:", err));
+    }
+  }, [isLoggedIn, currentView]);
 
   return (
     <div className="bg-gray-50 min-h-screen font-sans text-black antialiased relative w-full">
